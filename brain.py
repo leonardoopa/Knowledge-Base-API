@@ -10,6 +10,12 @@ load_dotenv()
 
 class LLMBrain:
     def __init__(self):
+        CANDIDATE_MODELS = [
+            "models/gemini-2.5-flash",
+            "models/gemini-2.0-flash",
+            "models/gemini-1.5-flash",
+        ]
+
         api_key = os.getenv("GOOGLE_API_KEY")
 
         self.embeddings = GoogleGenerativeAIEmbeddings(
@@ -17,7 +23,8 @@ class LLMBrain:
         )
 
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash", google_api_key=api_key
+            model=next((model for model in CANDIDATE_MODELS if os.path.exists(model)), "models/gemini-2.5-flash"), 
+            google_api_key=api_key
         )
 
         self.db_dir = "./chroma_db"
@@ -46,16 +53,25 @@ class LLMBrain:
 
     async def answer_question(self, question: str):
         docs = self.vector_db.similarity_search(question, k=3)
-        context = "\n\n".join([doc.page_content for doc in docs])
 
-        template = f"""Você é um assistente útil.
-        Use o seguinte contexto para responder à pergunta.
+        context = "\n\n---\n\n".join([doc.page_content for doc in docs])
 
-        Contexto:
+        prompt = f"""Você é um assistente técnico especializado que responde perguntas com base em documentos fornecidos.
+
+        REGRAS IMPORTANTES:
+        - Use APENAS o contexto abaixo para responder.
+        - Se a informação não estiver no contexto, diga educadamente que não encontrou essa informação nos documentos.
+        - Não tente inventar fatos ou usar conhecimentos externos.
+        - Responda de forma direta e profissional.
+
+        CONTEXTO RECUPERADO:
         {context}
 
-        Pergunta: {question}
-        """
+        PERGUNTA DO USUÁRIO:
+        {question}
 
-        response = await self.llm.ainvoke(template)
+        RESPOSTA:"""
+
+        response = await self.llm.ainvoke(prompt)
+
         return response.content
