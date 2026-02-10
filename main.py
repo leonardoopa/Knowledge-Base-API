@@ -1,6 +1,4 @@
 from fastapi import FastAPI, UploadFile, File
-import os 
-import dotenv
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,6 +7,7 @@ from brain import LLMBrain
 
 app = FastAPI()
 brain = LLMBrain()
+
 
 @app.post("/ingest")
 async def ingest_document(file: UploadFile = File(...)):
