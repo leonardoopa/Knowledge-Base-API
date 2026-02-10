@@ -1,4 +1,4 @@
-repos: 
+repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.4.4
     hooks:
@@ -27,4 +27,3 @@ repos:
     hooks:
       - id: autoflake
         args: ["--remove-all-unused-imports", "--remove-unused-variables", "--in-place", "--recursive"]
-
