@@ -5,6 +5,7 @@ from models.query_dtos import QueryRequest, QueryResponse
 app = FastAPI(title="Knowledge Base RAG API", version="1.0.0")
 brain = LLMBrain()
 
+
 @app.post("/ingest")
 async def ingest_document(file: UploadFile = File(...)):
     """
@@ -14,10 +15,10 @@ async def ingest_document(file: UploadFile = File(...)):
         content = await file.read()
         text = content.decode("utf-8")
         await brain.process_text(text)
-        
+
         return {
             "message": f"Arquivo '{file.filename}' processado com sucesso!",
-            "size": len(text)
+            "size": len(text),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na ingestão: {str(e)}")
@@ -30,16 +31,14 @@ async def ask_question(request: QueryRequest):
     """
     try:
         answer = await brain.answer_question(
-            question=request.question, 
-            session_id=request.session_id
+            question=request.question, session_id=request.session_id
         )
-        
-        return {
-            "answer": answer,
-            "session_id": request.session_id
-        }
+
+        return {"answer": answer, "session_id": request.session_id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na geração da resposta: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro na geração da resposta: {str(e)}"
+        )
 
 
 @app.get("/history/{session_id}")
