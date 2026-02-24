@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_chroma import Chroma
 from langchain_text_splitters import CharacterTextSplitter
+from langchain_community.chat_message_histories import RedisChatMessageHistory
 
 load_dotenv()
 
@@ -50,14 +51,22 @@ class LLMBrain:
         docs = self.vector_db.similarity_search(question, k=3)
         context = "\n\n---\n\n".join([doc.page_content for doc in docs])
 
-        if session_id not in self.chat_history:
-            self.chat_history[session_id] = []
+        redis_history = RedisChatMessageHistory(
+            session_id=session_id, 
+            url="redis://localhost:6379/0", 
+            key_prefix="chat_history_"
+        )
 
-        history_str = "\n".join(self.chat_history[session_id])
+        old_messages = redis_history.messages
 
+        ultimas_mensagens = old_messages[-6:] if len(old_messages) > 6 else old_messages
+
+        history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in ultimas_mensagens])
+
+        # 4. ENGENHARIA DE PROMPT
         prompt = f"""Você é um assistente técnico especializado.
         Responda à pergunta do usuário usando APENAS o contexto fornecido abaixo.
-        Considere o histórico da conversa para entender pronomes (como "ele", "isso", "lá").
+        Considere o histórico da conversa para entender pronomes (como "ele", "isso").
 
         HISTÓRICO DA CONVERSA:
         {history_str}
@@ -72,10 +81,51 @@ class LLMBrain:
         response = await self.llm.ainvoke(prompt)
         content = response.content
 
-        self.chat_history[session_id].append(f"Usuário: {question}")
-        self.chat_history[session_id].append(f"IA: {content}")
+        redis_history.add_user_message(question)
 
-        if len(self.chat_history[session_id]) > 10:
-            self.chat_history[session_id] = self.chat_history[session_id][-10:]
+        redis_history.add_ai_message(content)
 
         return content
+
+
+    async def stream_answer(self, question: str, session_id: str = "default"):
+        """Gera resposta via LLM e envia em partes (streaming)."""
+
+        docs = self.vector_db.similarity_search(question, k=3)
+        context = "\n\n---\n\n".join([doc.page_content for doc in docs])
+
+        redis_history = RedisChatMessageHistory(
+            session_id=session_id, 
+            url="redis://localhost:6379/0", 
+            key_prefix="chat_history_"
+        )
+
+        old_messages = redis_history.messages
+        ultimas_mensagens = old_messages[-6:] if len(old_messages) > 6 else old_messages
+        history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in ultimas_mensagens])
+
+        prompt = f"""Você é um assistente técnico especializado.
+        Responda à pergunta do usuário usando APENAS o contexto fornecido abaixo.
+        Considere o histórico da conversa.
+
+        HISTÓRICO DA CONVERSA:
+        {history_str}
+
+        CONTEXTO DOS DOCUMENTOS:
+        {context}
+
+        PERGUNTA ATUAL: {question}
+        
+        RESPOSTA:"""
+
+        redis_history.add_user_message(question)
+
+        completed_response = ""
+
+        async for chunk in self.llm.astream(prompt):
+            if chunk.content:
+                completed_response += chunk.content
+                yield chunk.content
+
+        redis_history.add_ai_message(completed_response)
+        
