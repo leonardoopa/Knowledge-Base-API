@@ -86,3 +86,46 @@ class LLMBrain:
         redis_history.add_ai_message(content)
 
         return content
+
+
+    async def stream_answer(self, question: str, session_id: str = "default"):
+        """Gera resposta via LLM e envia em partes (streaming)."""
+
+        docs = self.vector_db.similarity_search(question, k=3)
+        context = "\n\n---\n\n".join([doc.page_content for doc in docs])
+
+        redis_history = RedisChatMessageHistory(
+            session_id=session_id, 
+            url="redis://localhost:6379/0", 
+            key_prefix="chat_history_"
+        )
+
+        old_messages = redis_history.messages
+        ultimas_mensagens = old_messages[-6:] if len(old_messages) > 6 else old_messages
+        history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in ultimas_mensagens])
+
+        prompt = f"""Você é um assistente técnico especializado.
+        Responda à pergunta do usuário usando APENAS o contexto fornecido abaixo.
+        Considere o histórico da conversa.
+
+        HISTÓRICO DA CONVERSA:
+        {history_str}
+
+        CONTEXTO DOS DOCUMENTOS:
+        {context}
+
+        PERGUNTA ATUAL: {question}
+        
+        RESPOSTA:"""
+
+        redis_history.add_user_message(question)
+
+        completed_response = ""
+
+        async for chunk in self.llm.astream(prompt):
+            if chunk.content:
+                completed_response += chunk.content
+                yield chunk.content
+
+        redis_history.add_ai_message(completed_response)
+        

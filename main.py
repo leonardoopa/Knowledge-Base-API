@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from brain import LLMBrain
 from models.query_dtos import QueryRequest, QueryResponse
+from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="Knowledge Base RAG API", version="1.0.0")
 brain = LLMBrain()
@@ -48,3 +49,13 @@ async def get_history(session_id: str):
     """
     history = brain.chat_history.get(session_id, [])
     return {"session_id": session_id, "history": history}
+
+@app.post("/ask/stream")
+async def ask_question_stream(request: QueryRequest):
+    """
+    Retorna a resposta da IA como um fluxo contínuo (Streaming).
+    """
+    return StreamingResponse(
+        brain.stream_answer(question=request.question, session_id=request.session_id),
+        media_type="text/event-stream"
+    )
